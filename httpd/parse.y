@@ -133,7 +133,7 @@ typedef struct {
 %token	COMBINED CONNECTION DHE DIRECTORY ECDHE ERR FCGI INDEX IP KEY LISTEN
 %token	LOCATION LOG LOGDIR MATCH MAXIMUM NO NODELAY ON PORT PREFORK PROTOCOLS
 %token	REQUEST REQUESTS ROOT SACK SERVER SOCKET STRIP STYLE SYSLOG TCP TIMEOUT
-%token	TLS TYPE TYPES HSTS MAXAGE SUBDOMAINS DEFAULT PRELOAD
+%token	TLS TYPE TYPES HSTS SERVE_GZIP MAXAGE SUBDOMAINS DEFAULT PRELOAD
 %token	ERROR INCLUDE AUTHENTICATE WITH BLOCK DROP RETURN PASS
 %token	<v.string>	STRING
 %token  <v.number>	NUMBER
@@ -604,6 +604,9 @@ serveroptsl	: LISTEN ON STRING opttls port {
 				YYERROR;
 			}
 			srv->srv_conf.flags |= SRVFLAG_SERVER_HSTS;
+		}
+		| SERVE_GZIP {
+			srv->srv_conf.flags |= SRVFLAG_SERVER_GZIP;
 		}
 		;
 
@@ -1217,6 +1220,7 @@ lookup(char *s)
 		{ "return",		RETURN },
 		{ "root",		ROOT },
 		{ "sack",		SACK },
+		{ "serve_gzip",		SERVE_GZIP },
 		{ "server",		SERVER },
 		{ "socket",		SOCKET },
 		{ "strip",		STRIP },

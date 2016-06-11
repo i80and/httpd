@@ -57,6 +57,7 @@ int		 server_file_method(struct client *);
 int		 parse_range_spec(char *, size_t, struct range *);
 struct range	*parse_range(char *, size_t, int *);
 int		 buffer_add_range(int, struct evbuffer *, struct range *);
+int		 accepts_gzip(struct http_descriptor *);
 
 int
 server_file_access(struct httpd *env, struct client *clt,
@@ -230,7 +231,8 @@ server_file_request(struct httpd *env, struct client *clt, char *path,
 	struct server_config	*srv_conf = clt->clt_srv_conf;
 	struct media_type	*media;
 	const char		*errstr = NULL;
-	int			 fd = -1, ret, code = 500;
+	char			 gzip_path[PATH_MAX];
+	int			 fd = -1, ret, code = 500, len = 0, gzip = 0;
 
 	if ((ret = server_file_method(clt)) != 0) {
 		code = ret;
@@ -240,13 +242,32 @@ server_file_request(struct httpd *env, struct client *clt, char *path,
 	if ((ret = server_file_modified_since(clt->clt_descreq, st)) != -1)
 		return (ret);
 
-	/* Now open the file, should be readable or we have another problem */
-	if ((fd = open(path, O_RDONLY)) == -1)
-		goto abort;
+	/* If the client accepts gzip, try to find a .gz file */
+	if (srv_conf->flags & SRVFLAG_SERVER_GZIP &&
+	    (gzip = accepts_gzip(clt->clt_descreq))) {
+		len = snprintf(gzip_path, sizeof(gzip_path), "%s.gz", path);
+		if (len > 0 && len < PATH_MAX) {
+			fd = open(gzip_path, O_RDONLY);
+		}
+		
+		if (fd == -1)
+			gzip = 0;
+		else {
+			if (fstat(fd, st) == -1)
+				goto abort;
+		}
+	}
+
+	/* Otherwise, open the file, should be readable or we have
+	 * another problem */
+	if (fd == -1) {
+		if ((fd = open(path, O_RDONLY)) == -1)
+			goto abort;
+	}
 
 	media = media_find_config(env, srv_conf, path);
 	ret = server_response_http(clt, 200, media, st->st_size,
-	    MINIMUM(time(NULL), st->st_mtim.tv_sec));
+	    MINIMUM(time(NULL), st->st_mtim.tv_sec), gzip);
 	switch (ret) {
 	case -1:
 		goto fail;
@@ -393,7 +414,7 @@ server_partial_file_request(struct httpd *env, struct client *clt, char *path,
 	fd = -1;
 
 	ret = server_response_http(clt, 206, media, content_length,
-	    MINIMUM(time(NULL), st->st_mtim.tv_sec));
+	    MINIMUM(time(NULL), st->st_mtim.tv_sec), 0);
 	switch (ret) {
 	case -1:
 		goto fail;
@@ -558,7 +579,7 @@ server_file_index(struct httpd *env, struct client *clt, struct stat *st)
 
 	media = media_find_config(env, srv_conf, "index.html");
 	ret = server_response_http(clt, 200, media, EVBUFFER_LENGTH(evb),
-	    dir_mtime);
+	    dir_mtime, 0);
 	switch (ret) {
 	case -1:
 		goto fail;
@@ -776,4 +797,34 @@ buffer_add_range(int fd, struct evbuffer *evb, struct range *range)
 	}
 
 	return (1);
+}
+
+int
+accepts_gzip(struct http_descriptor *desc) {
+	struct kv	 key, *encodings;
+	char		*cursor;
+	char		*element;
+
+	key.kv_key = "Accept-Encoding";
+	encodings = kv_find(&desc->http_headers, &key);
+	if (encodings == NULL)
+		return (0);
+
+	if (encodings->kv_value == NULL)
+		return (0);
+
+	cursor = encodings->kv_value;
+	while ((element = strsep(&cursor, ",")) != NULL) {
+		if (strstr(element, "gzip") == NULL)
+			continue;
+
+		/* For simplicity, assume that if a qvalue is given, we
+		   cannot provide gzip */
+		if (strchr(element, ';') != NULL)
+			return (0);
+
+		return (1);
+	}
+
+	return (0);
 }

@@ -350,6 +350,13 @@ a browser's preload list.
 Signal to the receiving user agent that this host and all sub domains
 of the host's domain should be considered HSTS hosts.
 .El
+.It Ic serve_gzip
+If the client requests
+.Nm path ,
+then serve
+.Nm path.gz
+if it exists and the client accepts
+.Nm Content-Encoding: gzip .
 .It Ic listen on Ar address Oo Ic tls Oc Ic port Ar number
 Set the listen address and port.
 This statement can be specified multiple times.

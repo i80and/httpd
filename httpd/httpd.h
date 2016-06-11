@@ -349,13 +349,14 @@ SPLAY_HEAD(client_tree, client);
 #define SRVFLAG_SERVER_MATCH	0x00200000
 #define SRVFLAG_SERVER_HSTS	0x00400000
 #define SRVFLAG_DEFAULT_TYPE	0x00800000
+#define SRVFLAG_SERVER_GZIP	0x01000000
 
 #define SRVFLAG_BITS							\
 	"\10\01INDEX\02NO_INDEX\03AUTO_INDEX\04NO_AUTO_INDEX"		\
 	"\05ROOT\06LOCATION\07FCGI\10NO_FCGI\11LOG\12NO_LOG\13SOCKET"	\
 	"\14SYSLOG\15NO_SYSLOG\16TLS\17ACCESS_LOG\20ERROR_LOG"		\
 	"\21AUTH\22NO_AUTH\23BLOCK\24NO_BLOCK\25LOCATION_MATCH"		\
-	"\26SERVER_MATCH\27SERVER_HSTS\30DEFAULT_TYPE"
+	"\26SERVER_MATCH\27SERVER_HSTS\30DEFAULT_TYPE\31SERVER_GZIP"
 
 #define TCPFLAG_NODELAY		0x01
 #define TCPFLAG_NNODELAY	0x02
@@ -585,7 +586,7 @@ int	 server_headers(struct client *, void *,
 	    int (*)(struct client *, struct kv *, void *), void *);
 int	 server_writeresponse_http(struct client *);
 int	 server_response_http(struct client *, unsigned int, struct media_type *,
-	    off_t, time_t);
+	    off_t, time_t, int);
 void	 server_reset_http(struct client *);
 void	 server_close_http(struct client *);
 int	 server_response(struct httpd *, struct client *);
