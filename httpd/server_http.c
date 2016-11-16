@@ -1228,7 +1228,7 @@ server_getlocation(struct client *clt, const char *path)
 
 int
 server_response_http(struct client *clt, unsigned int code,
-    struct media_type *media, off_t size, time_t mtime, int compressed)
+    struct media_type *media, off_t size, time_t mtime, int compression)
 {
 	struct server_config	*srv_conf = clt->clt_srv_conf;
 	struct http_descriptor	*desc = clt->clt_descreq;
@@ -1282,8 +1282,11 @@ server_response_http(struct client *clt, unsigned int code,
 		return (-1);
 
 	/* Set encoding type */
-	if (compressed) {
+	if (compression == COMPRESS_GZIP) {
 		if (kv_add(&resp->http_headers, "Content-Encoding", "gzip") == NULL)
+			return (-1);
+	} else if (compression == COMPRESS_BROTLI) {
+		if (kv_add(&resp->http_headers, "Content-Encoding", "br") == NULL)
 			return (-1);
 	}
 

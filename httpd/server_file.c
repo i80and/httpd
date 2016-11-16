@@ -57,7 +57,9 @@ int		 server_file_method(struct client *);
 int		 parse_range_spec(char *, size_t, struct range *);
 struct range	*parse_range(char *, size_t, int *);
 int		 buffer_add_range(int, struct evbuffer *, struct range *);
-int		 accepts_gzip(struct http_descriptor *);
+int		 accepts_encoding(struct http_descriptor *, const char *);
+int		 try_serve_encoding(const char *, struct client *,
+		    const char *, const char *);
 
 int
 server_file_access(struct httpd *env, struct client *clt,
@@ -231,8 +233,7 @@ server_file_request(struct httpd *env, struct client *clt, char *path,
 	struct server_config	*srv_conf = clt->clt_srv_conf;
 	struct media_type	*media;
 	const char		*errstr = NULL;
-	char			 gzip_path[PATH_MAX];
-	int			 fd = -1, ret, code = 500, len = 0, gzip = 0;
+	int			 fd = -1, ret, code = 500, compress = COMPRESS_NONE;
 
 	if ((ret = server_file_method(clt)) != 0) {
 		code = ret;
@@ -242,17 +243,15 @@ server_file_request(struct httpd *env, struct client *clt, char *path,
 	if ((ret = server_file_modified_since(clt->clt_descreq, st)) != -1)
 		return (ret);
 
-	/* If the client accepts gzip, try to find a .gz file */
-	if (srv_conf->flags & SRVFLAG_SERVER_GZIP &&
-	    (gzip = accepts_gzip(clt->clt_descreq))) {
-		len = snprintf(gzip_path, sizeof(gzip_path), "%s.gz", path);
-		if (len > 0 && len < PATH_MAX) {
-			fd = open(gzip_path, O_RDONLY);
+	/* If the client accepts compression, try to find a match */
+	if (srv_conf->flags & SRVFLAG_SERVER_COMPRESS) {
+		if ((fd = try_serve_encoding(path, clt, "br", "br")) != -1) {
+			compress = COMPRESS_BROTLI;
+		} else if ((fd = try_serve_encoding(path, clt, "gzip", "gz")) != -1) {
+			compress = COMPRESS_GZIP;
 		}
-		
-		if (fd == -1)
-			gzip = 0;
-		else {
+
+		if (fd != -1) {
 			if (fstat(fd, st) == -1)
 				goto abort;
 		}
@@ -267,7 +266,7 @@ server_file_request(struct httpd *env, struct client *clt, char *path,
 
 	media = media_find_config(env, srv_conf, path);
 	ret = server_response_http(clt, 200, media, st->st_size,
-	    MINIMUM(time(NULL), st->st_mtim.tv_sec), gzip);
+	    MINIMUM(time(NULL), st->st_mtim.tv_sec), compress);
 	switch (ret) {
 	case -1:
 		goto fail;
@@ -800,7 +799,7 @@ buffer_add_range(int fd, struct evbuffer *evb, struct range *range)
 }
 
 int
-accepts_gzip(struct http_descriptor *desc) {
+accepts_encoding(struct http_descriptor *desc, const char* encoding) {
 	struct kv	 key, *encodings;
 	char		*cursor;
 	char		*element;
@@ -815,11 +814,11 @@ accepts_gzip(struct http_descriptor *desc) {
 
 	cursor = encodings->kv_value;
 	while ((element = strsep(&cursor, ",")) != NULL) {
-		if (strstr(element, "gzip") == NULL)
+		if (strstr(element, encoding) == NULL)
 			continue;
 
 		/* For simplicity, assume that if a qvalue is given, we
-		   cannot provide gzip */
+		   cannot provide compression */
 		if (strchr(element, ';') != NULL)
 			return (0);
 
@@ -827,4 +826,21 @@ accepts_gzip(struct http_descriptor *desc) {
 	}
 
 	return (0);
+}
+
+int try_serve_encoding(const char *path, struct client *clt,
+    const char *name, const char *suffix)
+{
+	char	encoding_path[PATH_MAX];
+	int	len = 0;
+
+	if (accepts_encoding(clt->clt_descreq, name)) {
+		len = snprintf(encoding_path, sizeof(encoding_path), "%s.%s", path, suffix);
+	}
+
+	if (len > 0 && len < PATH_MAX) {
+		return open(encoding_path, O_RDONLY);
+	}
+
+	return -1;
 }
